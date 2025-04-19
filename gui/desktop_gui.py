@@ -2,6 +2,107 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
 from servermaster import core
+import threading
+import socket
+import subprocess
+import os
+
+root = tk.Tk()
+
+# --- INIT ---
+root = tk.Tk()
+root.title("ServerMaster Desktop UI")
+root.geometry("800x600")
+root.configure(bg="#2e2e2e")
+
+# --- STYLING ---
+style = ttk.Style()
+style.theme_use("alt")
+
+style.configure(".", 
+    background="#2e2e2e", 
+    foreground="#ffffff", 
+    font=("Segoe UI", 10)
+)
+style.configure("TButton", 
+    background="#444", 
+    foreground="white", 
+    padding=6,
+    relief="flat"
+)
+style.map("TButton",
+    background=[("active", "#666")],
+    relief=[("pressed", "sunken")]
+)
+style.configure("TLabel", background="#2e2e2e", foreground="#dddddd")
+style.configure("TCheckbutton", background="#2e2e2e", foreground="white")
+style.configure("TFrame", background="#2e2e2e")
+
+
+# --- 🔧 AUTO-LAUNCH WEB API ---
+
+def is_port_open(host, port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        return sock.connect_ex((host, port)) == 0
+
+def launch_web_api():
+    if not is_port_open("127.0.0.1", 5000):
+        subprocess.Popen(["python3", "-m", "web.api"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+# Fire up the web API as a background process
+threading.Thread(target=launch_web_api, daemon=True).start()
+
+
+main_frame = ttk.Frame(root, padding=20)
+main_frame.pack(fill="both", expand=True)
+
+header = ttk.Label(main_frame, text="ServerMaster", font=("Segoe UI", 18, "bold"))
+header.pack(pady=(0, 20))
+
+server_frame = ttk.Frame(main_frame)
+server_frame.pack(fill="x", expand=True)
+
+def refresh_servers():
+    for widget in server_frame.winfo_children():
+        widget.destroy()
+    servers = core.scan_servers()
+    for path in servers:
+        name = path.name
+        running = core.is_running(name)
+        modded = core.load_config().get(name, {}).get("modded", False)
+        players = core.get_players(path)
+        mods = core.get_mods(path) if modded else []
+
+        status_text = "[ONLINE]" if running else "[OFFLINE]"
+        status_color = "lightgreen" if running else "gray"
+        label = ttk.Label(server_frame, text=f"{name} {status_text}", foreground=status_color)
+        label.pack(anchor="w")
+
+        btn_frame = ttk.Frame(server_frame)
+        btn_frame.pack(fill="x", pady=5)
+
+        ttk.Button(btn_frame, text="Start", command=lambda p=path: core.start_server(p)).pack(side="left")
+        ttk.Button(btn_frame, text="Stop", command=lambda n=name: core.stop_server_by_name(n)).pack(side="left")
+        ttk.Button(btn_frame, text="Open Folder", command=lambda p=path: subprocess.run(["xdg-open", str(p)])).pack(side="left")
+        ttk.Button(btn_frame, text="Open in Web UI", command=lambda: webbrowser.open("http://localhost:5000")).pack(side="left")
+
+        var = tk.BooleanVar(value=modded)
+        toggle = ttk.Checkbutton(btn_frame, text="Modded", variable=var, 
+                                 command=lambda n=name, v=var: core.toggle_modded(n, v.get()))
+        toggle.pack(side="left")
+
+        if players:
+            ttk.Label(btn_frame, text=f"Players: {', '.join(players)}").pack(side="left", padx=10)
+        if mods:
+            ttk.Label(btn_frame, text=f"Mods: {len(mods)}").pack(side="left", padx=10)
+
+refresh_button = ttk.Button(main_frame, text="🔄 Refresh", command=refresh_servers)
+refresh_button.pack(pady=10)
+
+refresh_servers()
+root.mainloop()
+
+
 
 class ServerMasterGUI(tk.Tk):
     def __init__(self):
